@@ -33,6 +33,7 @@ const RelayID = "skopeo"
 type RelayConfig struct {
 	Binary   string `yaml:"binary"`
 	CertsDir string `yaml:"certs-dir"`
+	Mode     string `yaml:"mode"`
 }
 
 //
@@ -54,6 +55,11 @@ func NewSkopeoRelay(conf *RelayConfig, out io.Writer) *SkopeoRelay {
 		}
 		if conf.CertsDir != "" {
 			certsBaseDir = conf.CertsDir
+		}
+		if conf.Mode != "" {
+			skopeoMode = conf.Mode
+		} else {
+			skopeoMode = "copy"
 		}
 	}
 
@@ -86,8 +92,13 @@ func (r *SkopeoRelay) Sync(srcRef, srcAuth string, srcSkipTLSVerify bool,
 
 	cmd := []string{
 		"--insecure-policy",
-		"copy",
+		skopeoMode,
 	}
+
+	if skopeoMode == "sync" {
+		cmd = append(cmd, "--src=docker")
+		cmd = append(cmd, "--dest=docker")
+        }
 
 	if srcSkipTLSVerify {
 		cmd = append(cmd, "--src-tls-verify=false")
@@ -126,11 +137,20 @@ func (r *SkopeoRelay) Sync(srcRef, srcAuth string, srcSkipTLSVerify bool,
 	errs := false
 	for _, tag := range tags {
 		log.WithField("tag", tag).Info("syncing tag")
-		if err := runSkopeo(r.wrOut, r.wrOut, verbose, append(cmd,
-			fmt.Sprintf("docker://%s:%s", srcRef, tag),
-			fmt.Sprintf("docker://%s:%s", destRef, tag))...); err != nil {
-			log.Error(err)
-			errs = true
+		if skopeoMode == "copy" {
+			if err := runSkopeo(r.wrOut, r.wrOut, verbose, append(cmd,
+				fmt.Sprintf("docker://%s:%s", srcRef, tag),
+				fmt.Sprintf("docker://%s:%s", destRef, tag))...); err != nil {
+				log.Error(err)
+				errs = true
+			}
+		} else {
+			if err := runSkopeo(r.wrOut, r.wrOut, verbose, append(cmd,
+				fmt.Sprintf("%s:%s", srcRef, tag),
+				fmt.Sprintf("%s", destRef))...); err != nil {
+				log.Error(err)
+				errs = true
+			}
 		}
 	}
 
